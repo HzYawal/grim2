@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .init({
                 supportedLngs: ['ko', 'en'],
                 fallbackLng: 'en',
-                debug: false, // true로 하면 콘솔에 더 많은 로그 출력
+                debug: false,
                 detection: {
                     order: ['navigator', 'cookie', 'localStorage', 'querystring', 'htmlTag'],
                     caches: ['cookie', 'localStorage'],
@@ -98,8 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("i18next initialized. Final language used by i18next:", i18n.language);
         document.documentElement.lang = i18n.language.split('-')[0];
 
-        buildGoalSelectStructure(); // Select 박스 구조 먼저 만들고
-        updateAllTexts();           // 그 다음에 전체 텍스트 업데이트 (Select 내부 포함)
+        buildGoalSelectStructure();
+        updateAllTexts();
         updateActiveLangButton();
 
         i18n.on('languageChanged', (lng) => {
@@ -114,10 +114,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!visualizerCanvas) { console.error("Visualizer canvas not found!"); return; }
         canvasCtx = visualizerCanvas.getContext('2d');
         if (!canvasCtx) { console.error("Failed to get canvas context!"); return; }
-        // 초기에는 숨겨둠
         if (visualizerSection) visualizerSection.style.display = 'none';
     }
 
+    // ===== 시각화 함수 (부드러운 곡선 스타일) =====
     function drawSimulatedWaveform() {
         if (!canvasCtx || !visualizerCanvas || !isPlaying) {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
@@ -132,8 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const canvasWidth = visualizerCanvas.width;
         const canvasHeight = visualizerCanvas.height;
         const centerY = canvasHeight / 2;
-        let amplitude = canvasHeight / 2.5;
-        if (masterGain) { amplitude *= masterGain.gain.value; }
+
+        let baseAmplitude = canvasHeight / 2.8;
+        if (masterGain) { baseAmplitude *= masterGain.gain.value; }
+
+        const envelopeFactor = 0.7 + ((Math.sin(visualizerTime * 0.08) + 1) / 2) * 0.3;
+        const amplitude = baseAmplitude * envelopeFactor;
 
         canvasCtx.clearRect(0, 0, canvasWidth, canvasHeight);
         canvasCtx.lineWidth = 2;
@@ -141,41 +145,40 @@ document.addEventListener('DOMContentLoaded', () => {
         canvasCtx.beginPath();
         canvasCtx.moveTo(0, centerY);
 
-        // --- waveLengthFactor 계산 로직 (개선안 적용) ---
         let waveLengthFactor;
-        const freq = currentVisualizerFrequency; // 가독성을 위해 변수 사용
+        const freq = currentVisualizerFrequency;
 
         if (freq <= 0) {
-            waveLengthFactor = canvasWidth / 2; // 기본 파동 (2개 정도)
-        } else if (freq < 5) { // 1-4 Hz (매우 긴 파장)
-            waveLengthFactor = canvasWidth / (freq * 0.4 + 0.5); // 더 극적인 변화
-        } else if (freq < 20) { // 5-19 Hz (긴 파장)
-            waveLengthFactor = canvasWidth / (freq * 0.7);
-        } else if (freq < 100) { // 20-99 Hz (중간 파장)
-            waveLengthFactor = canvasWidth / (freq * 1.0 + 10); // 이전보다 변화폭 조금 더
-        } else if (freq < 500) { // 100-499 Hz (짧은 파장)
-            waveLengthFactor = canvasWidth / (freq * 1.2 + 30);
-        } else { // 500 Hz 이상 (매우 짧은 파장)
-            waveLengthFactor = Math.max(3, canvasWidth / (freq * 1.5 + 50)); // 최소 3픽셀은 되도록
+            waveLengthFactor = canvasWidth / 2;
+        } else if (freq < 5) {
+            waveLengthFactor = canvasWidth / (freq * 0.25 + 0.5);
+        } else if (freq < 20) {
+            waveLengthFactor = canvasWidth / (freq * 0.4 + 1);
+        } else if (freq < 100) {
+            waveLengthFactor = canvasWidth / (freq * 0.7 + 3);
+        } else if (freq < 300) {
+            waveLengthFactor = canvasWidth / (freq * 0.9 + 15);
+        } else {
+            waveLengthFactor = Math.max(15, canvasWidth / (freq * 1.0 + 30));
         }
-        waveLengthFactor = Math.max(3, Math.min(canvasWidth, waveLengthFactor)); // 최소/최대값 제한
+        waveLengthFactor = Math.max(15, Math.min(canvasWidth / 1.2, waveLengthFactor));
 
-        visualizerTime += 0.05; // 웨이브 흐르는 속도
+        visualizerTime += 0.04;
 
         for (let x = 0; x < canvasWidth; x++) {
-            // Math.PI * 2 를 곱하여 x / waveLengthFactor 가 1이 될 때 한 사이클(360도)이 되도록 함
             const y = centerY + amplitude * Math.sin((x / waveLengthFactor) * (Math.PI * 2) + visualizerTime);
             canvasCtx.lineTo(x, y);
         }
         canvasCtx.stroke();
     }
+    // ===== 시각화 함수 끝 =====
 
     function startVisualizer(frequency) {
-        currentVisualizerFrequency = frequency > 0 ? frequency : 1; // 주파수가 0이면 최소값 1로 처리
+        currentVisualizerFrequency = frequency > 0 ? frequency : 1;
         console.log("Starting visualizer with frequency:", currentVisualizerFrequency);
         if (isPlaying && canvasCtx) {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            visualizerTime = 0; // 새 주파수로 시작 시 시간 초기화 (선택적)
+            visualizerTime = 0;
             drawSimulatedWaveform();
         } else if (isPlaying && !canvasCtx) {
             console.warn("Canvas context not ready for visualizer.");
@@ -193,20 +196,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (visualizerSection) {
             visualizerSection.style.display = 'none';
         }
-        currentVisualizerFrequency = 0; // 주파수 초기화
+        currentVisualizerFrequency = 0;
     }
 
 
     function updateAllTexts() {
         if (!i18n || !i18n.isInitialized) {
             console.warn("i18next not ready, cannot update texts.");
-            // i18next가 준비 안됐을 때 기본값으로라도 시도 (선택적)
-            document.querySelectorAll('[data-i18n]').forEach(el => {
-                const key = el.getAttribute('data-i18n');
-                if (key && el.textContent.trim() === '' && el.tagName !== 'TITLE') { // 비어있으면 일단 키라도 보여주기
-                    // el.textContent = `[${key}]`; // 또는 그냥 비워둠
-                }
-            });
             return;
         }
         console.log("Updating all texts for language:", i18n.language);
@@ -217,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (el.tagName === 'TITLE') document.title = translation;
                 else if (el.tagName === 'INPUT' && (el.type === 'button' || el.type === 'submit') || el.tagName === 'BUTTON') el.textContent = translation;
                 else if (el.tagName === 'SMALL' || el.tagName === 'P' || el.tagName === 'H1' || el.tagName === 'H2' || el.tagName === 'H3' || el.tagName === 'LABEL' || el.tagName === 'SPAN') {
-                     el.innerHTML = translation; // HTML 태그가 포함될 수 있는 요소들
+                     el.innerHTML = translation;
                 }
                 else el.textContent = translation;
             } else if (key) {
@@ -225,17 +221,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        updateGoalSelectTexts(); // Select 박스 내부 텍스트 업데이트
+        updateGoalSelectTexts();
         if(playPauseButton) playPauseButton.textContent = isPlaying ? i18n.t('button_pause') : i18n.t('button_play');
-        if(manualTypeSelect) updateManualSettingsUI(manualTypeSelect.value); // 수동 설정 UI 레이블 업데이트
+        if(manualTypeSelect) updateManualSettingsUI(manualTypeSelect.value);
 
-        // 현재 재생 정보 업데이트 (중요: isPlaying 상태와 선택된 값에 따라)
         if (!isPlaying && goalSelect) {
             updateInfoDisplayFromPreset(goalSelect.value);
         } else if (isPlaying && goalSelect) {
-            // 이미 playSound에서 updateInfoDisplay가 호출되므로 중복 호출 방지 또는 필요시 조건부 호출
-            // 여기서는 goalSelect.value가 변경되었을 때 isPlaying이면 playSound가 다시 호출되어 정보를 업데이트함.
-            // 만약 언어 변경 시 재생 중인 정보도 다시 번역해야 한다면, 아래와 같이 현재 상태 기반으로 정보 재표시
             const currentPresetKey = goalSelect.value;
             const preset = PRESETS_CONFIG[currentPresetKey];
             let displayInfoText, effectInfoKey, sourceInfo;
@@ -243,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const manualType = manualTypeSelect.value;
                 const targetFreq = parseFloat(targetFreqInput.value);
                 const baseTone = parseFloat(baseToneInput.value) || DEFAULT_BASE_TONE;
-                effectInfoKey = PRESETS_CONFIG.manual.effectKey; // preset이 manual 자체일 수 있음
+                effectInfoKey = PRESETS_CONFIG.manual.effectKey;
                 sourceInfo = PRESETS_CONFIG.manual.source;
                 if (manualType === "binaural") {
                     displayInfoText = i18n.t('info_manual_binaural_format', { targetFreq: targetFreq.toFixed(2), baseTone: baseTone.toFixed(2) });
@@ -254,12 +246,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 displayInfoText = i18n.t(preset.typeKey);
                 effectInfoKey = preset.effectKey;
                 sourceInfo = preset.source;
-            } else { // preset이 없는 경우 (예: 초기 로드 시점)
+            } else {
                 displayInfoText = i18n.t('info_waiting_selection');
             }
             if (displayInfoText) updateInfoDisplay(displayInfoText, effectInfoKey, sourceInfo);
 
-        } else if (!isPlaying && currentSoundInfo) { // 어떤 이유로든 정보가 없을 때 기본 메시지
+        } else if (!isPlaying && currentSoundInfo) {
             currentSoundInfo.textContent = i18n.t('info_waiting_selection');
             soundEffectInfo.textContent = '';
             if(scientificSourceDiv) scientificSourceDiv.style.display = 'none';
@@ -274,8 +266,8 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const key in PRESETS_CONFIG) { const preset = PRESETS_CONFIG[key]; const categoryKey = preset.categoryKey; if (!categories[categoryKey]) { categories[categoryKey] = []; } categories[categoryKey].push({ key, preset }); }
         const categoryOrderKeys = ["category_manual", "category_brainwave_binaural", "category_solfeggio_single_tone", "category_special_binaural", "category_special_single_tone"];
         const sortedCategoryKeys = [...categoryOrderKeys, ...Object.keys(categories).filter(k => !categoryOrderKeys.includes(k))];
-        sortedCategoryKeys.forEach(categoryKey => { if (categories[categoryKey]) { const optgroup = document.createElement('optgroup'); optgroup.setAttribute('data-i18n-label', categoryKey); categories[categoryKey].forEach(item => { const option = document.createElement('option'); option.value = item.key; option.setAttribute('data-i18n-text', item.preset.typeKey); /* 텍스트는 updateGoalSelectTexts에서 채움 */ optgroup.appendChild(option); }); goalSelect.appendChild(optgroup); } });
-        goalSelect.value = "manual"; // 기본 선택
+        sortedCategoryKeys.forEach(categoryKey => { if (categories[categoryKey]) { const optgroup = document.createElement('optgroup'); optgroup.setAttribute('data-i18n-label', categoryKey); categories[categoryKey].forEach(item => { const option = document.createElement('option'); option.value = item.key; option.setAttribute('data-i18n-text', item.preset.typeKey); optgroup.appendChild(option); }); goalSelect.appendChild(optgroup); } });
+        goalSelect.value = "manual";
         console.log("Goal select structure built.");
     }
 
@@ -298,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
             targetFreqLabel.textContent = i18n.t(binauralLabelKey);
             if(i18n.exists(binauralPlaceholderKey)) targetFreqInput.placeholder = i18n.t(binauralPlaceholderKey); else targetFreqInput.placeholder = "e.g., 3";
             baseToneGroup.style.display = 'block';
-        } else { // single_tone
+        } else {
             targetFreqLabel.textContent = i18n.t(singleToneLabelKey);
             if(i18n.exists(singleTonePlaceholderKey)) targetFreqInput.placeholder = i18n.t(singleTonePlaceholderKey); else targetFreqInput.placeholder = "e.g., 432";
             baseToneGroup.style.display = 'none';
@@ -315,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  return;
             }
         }
-        stopOscillators(); // 기존 오실레이터 정지
+        stopOscillators();
 
         let leftFreq, rightFreq, visualFreqToUse;
         const currentPresetKey = goalSelect.value;
@@ -331,18 +323,18 @@ document.addEventListener('DOMContentLoaded', () => {
             effectInfoKey = preset.effectKey; sourceInfo = preset.source;
             if (manualType === "binaural") {
                 leftFreq = baseToneVal; rightFreq = baseToneVal + targetFreq;
-                visualFreqToUse = baseToneVal; // 바이노럴은 baseTone을 기준으로 시각화 (또는 targetFreq도 가능)
+                visualFreqToUse = baseToneVal;
                 displayInfoText = i18n.t('info_manual_binaural_format', { targetFreq: targetFreq.toFixed(2), baseTone: baseToneVal.toFixed(2) });
-            } else { // single_tone
+            } else {
                 leftFreq = targetFreq; rightFreq = targetFreq;
                 visualFreqToUse = targetFreq;
                 displayInfoText = i18n.t('info_manual_single_tone_format', { targetFreq: targetFreq.toFixed(2) });
             }
-        } else { // 프리셋
-            if (preset.effectHz !== undefined) { // 바이노럴 프리셋
+        } else {
+            if (preset.effectHz !== undefined) {
                 leftFreq = preset.baseTone; rightFreq = preset.baseTone + preset.effectHz;
                 visualFreqToUse = preset.baseTone;
-            } else if (preset.singleHz !== undefined) { // 단일톤 프리셋
+            } else if (preset.singleHz !== undefined) {
                 leftFreq = preset.singleHz; rightFreq = preset.singleHz;
                 visualFreqToUse = preset.singleHz;
             }
@@ -369,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
             oscillatorRight.start(audioCtx.currentTime);
             isPlaying = true;
             if(playPauseButton && i18n && i18n.isInitialized) playPauseButton.textContent = i18n.t('button_pause');
-            startVisualizer(visualFreqToUse); // 시각화 시작
+            startVisualizer(visualFreqToUse);
         } catch (e) {
             console.error("Error starting oscillators:", e);
             isPlaying = false;
@@ -388,8 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
         stopWhiteNoise();
         isPlaying = false;
         if(playPauseButton && i18n && i18n.isInitialized) playPauseButton.textContent = i18n.t('button_play');
-        if(goalSelect && i18n && i18n.isInitialized) updateInfoDisplayFromPreset(goalSelect.value); // 정지 시 현재 선택된 프리셋 정보 표시
-        stopVisualizer(); // 시각화 중지
+        if(goalSelect && i18n && i18n.isInitialized) updateInfoDisplayFromPreset(goalSelect.value);
+        stopVisualizer();
     }
 
     function stopOscillators() { if (oscillatorLeft) { try { oscillatorLeft.stop(audioCtx.currentTime); } catch (e) {} oscillatorLeft.disconnect(); oscillatorLeft = null; } if (oscillatorRight) { try { oscillatorRight.stop(audioCtx.currentTime); } catch (e) {} oscillatorRight.disconnect(); oscillatorRight = null; } }
@@ -400,19 +392,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentSoundInfo || !soundEffectInfo || !scientificSourceDiv || !tooltipTextSpan || !i18n || !i18n.isInitialized) return;
 
         let finalCurrentSoundText = currentSoundTextOrKey;
-        //  i18n.t()를 이미 거친 텍스트인지, 아니면 키인지 확인하는 더 나은 방법 필요할 수 있음
-        //  현재는 preset.typeKey 같은 키 형태('. 포함')인지, 아니면 수동 생성된 텍스트인지로 구분
         if (typeof currentSoundTextOrKey === 'string' && currentSoundTextOrKey.includes('.') && i18n.exists(currentSoundTextOrKey)) {
-            finalCurrentSoundText = i18n.t('info_playing_prefix') + " " + i18n.t(currentSoundTextOrKey);
-        } else if (typeof currentSoundTextOrKey === 'string' && (currentSoundTextOrKey.startsWith(i18n.t('info_manual_binaural_format', {targetFreq:'', baseTone:''}).substring(0,5)) || currentSoundTextOrKey.startsWith(i18n.t('info_manual_single_tone_format', {targetFreq:''}).substring(0,5)) )) {
-             // 수동 생성 포맷은 이미 "Manual: " 또는 "수동: "으로 시작하므로, info_playing_prefix를 붙이지 않음.
-             // 대신, 재생 중일 때만 "Playing: " 또는 "재생 중: " 접두사를 붙여줌 (선택적)
+            finalCurrentSoundText = (isPlaying ? i18n.t('info_playing_prefix') + " " : "") + i18n.t(currentSoundTextOrKey);
+        } else if (typeof currentSoundTextOrKey === 'string' && (currentSoundTextOrKey.startsWith(i18n.t('info_manual_binaural_format',{targetFreq:'',baseTone:''}).substring(0,5)) || currentSoundTextOrKey.startsWith(i18n.t('info_manual_single_tone_format',{targetFreq:''}).substring(0,5)) )) {
             if (isPlaying) {
-                finalCurrentSoundText = i18n.t('info_playing_prefix') + " " + currentSoundTextOrKey;
+                 finalCurrentSoundText = i18n.t('info_playing_prefix') + " " + currentSoundTextOrKey;
             } else {
-                finalCurrentSoundText = currentSoundTextOrKey; // 정지 시에는 접두사 없이
+                finalCurrentSoundText = currentSoundTextOrKey;
             }
-        } else if (typeof currentSoundTextOrKey === 'string') { // 그 외 문자열 (이미 번역된 텍스트)
+        } else if (typeof currentSoundTextOrKey === 'string') {
              if (isPlaying && !currentSoundTextOrKey.startsWith(i18n.t('info_playing_prefix'))) {
                 finalCurrentSoundText = i18n.t('info_playing_prefix') + " " + currentSoundTextOrKey;
              } else if (!isPlaying && currentSoundTextOrKey.startsWith(i18n.t('info_playing_prefix'))) {
@@ -452,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 displayInfoText = i18n.t('info_manual_single_tone_format', { targetFreq: targetFreq.toFixed(2) });
             }
         } else {
-            displayInfoText = i18n.t(preset.typeKey); // 키 자체를 전달
+            displayInfoText = preset.typeKey; // 키 자체를 전달 (updateInfoDisplay에서 t() 호출)
         }
         updateInfoDisplay(displayInfoText, preset.effectKey, preset.source);
     }
@@ -477,36 +465,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (selectedValue === "manual") {
             if(manualSettingsDiv) manualSettingsDiv.style.display = 'block';
-            if(manualTypeSelect) manualTypeSelect.value = "binaural"; // 수동 선택 시 기본은 바이노럴
+            if(manualTypeSelect) manualTypeSelect.value = "binaural";
             if(i18n && i18n.isInitialized) updateManualSettingsUI("binaural");
-            if(targetFreqInput) targetFreqInput.value = 3; // 기본값
+            if(targetFreqInput) targetFreqInput.value = 3;
             if(baseToneInput) baseToneInput.value = DEFAULT_BASE_TONE;
         } else {
             if(manualSettingsDiv) manualSettingsDiv.style.display = 'none';
-            if (preset.effectHz !== undefined && targetFreqInput && baseToneInput) { // 바이노럴 프리셋
+            if (preset.effectHz !== undefined && targetFreqInput && baseToneInput) {
                 targetFreqInput.value = preset.effectHz;
                 baseToneInput.value = preset.baseTone;
-            } else if (preset.singleHz !== undefined && targetFreqInput) { // 단일톤 프리셋
+            } else if (preset.singleHz !== undefined && targetFreqInput) {
                 targetFreqInput.value = preset.singleHz;
-                 // 단일톤일 때는 baseToneInput 값을 특별히 설정할 필요 없음 (UI에서 숨겨짐)
             }
         }
-        if (isPlaying) { // 재생 중 프리셋 변경 시
-            if (audioCtx && audioCtx.state === 'running') playSound(); // 즉시 소리 변경
+        if (isPlaying) {
+            if (audioCtx && audioCtx.state === 'running') playSound();
             else if(currentSoundInfo && i18n && i18n.isInitialized) currentSoundInfo.textContent = i18n.t('info_setting_changed_play');
-        } else { // 정지 상태에서 프리셋 변경 시
+        } else {
             updateInfoDisplayFromPreset(selectedValue);
-            stopVisualizer(); // 정지 상태이므로 시각화도 확실히 중지/클리어
+            stopVisualizer();
         }
     });
 
     if(manualTypeSelect) manualTypeSelect.addEventListener('change', (e) => {
         if(i18n && i18n.isInitialized) updateManualSettingsUI(e.target.value);
-        if (goalSelect && goalSelect.value === "manual") { // 수동 모드일 때만 영향
+        if (goalSelect && goalSelect.value === "manual") {
             if (isPlaying) {
-                playSound(); // 재생 중이면 즉시 소리 변경
+                playSound();
             } else {
-                updateInfoDisplayFromPreset("manual"); // 정지 중이면 정보만 업데이트
+                updateInfoDisplayFromPreset("manual");
                 stopVisualizer();
             }
         }
@@ -514,11 +501,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     [targetFreqInput, baseToneInput].forEach(input => {
         if(input) input.addEventListener('input', () => {
-            if (goalSelect && goalSelect.value === "manual") { // 수동 모드일 때만 영향
+            if (goalSelect && goalSelect.value === "manual") {
                 if (isPlaying) {
-                    playSound(); // 재생 중이면 즉시 소리 변경
+                    playSound();
                 } else {
-                    updateInfoDisplayFromPreset("manual"); // 정지 중이면 정보만 업데이트
+                    updateInfoDisplayFromPreset("manual");
                     stopVisualizer();
                 }
             }
@@ -530,17 +517,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 초기화 실행 ---
     initI18next().then(() => {
-        setupVisualizer(); // i18next 초기화 후 시각화 설정
+        setupVisualizer();
         if(masterVolumeInput) updateSliderTrackFill(masterVolumeInput);
         if(whiteNoiseVolumeInput) updateSliderTrackFill(whiteNoiseVolumeInput);
-        if(goalSelect) goalSelect.dispatchEvent(new Event('change')); // 초기 정보 표시 및 UI 설정
+        if(goalSelect) goalSelect.dispatchEvent(new Event('change'));
         console.log("HZMindCare App initialized successfully.");
     }).catch(err => {
         console.error("Critical error during app initialization:", err);
-        // i18next 실패 시에도 최소한의 UI는 구성
         setupVisualizer();
         buildGoalSelectStructure();
-        updateGoalSelectTexts(); // 번역은 안되겠지만 구조라도
+        updateGoalSelectTexts();
         if(masterVolumeInput) updateSliderTrackFill(masterVolumeInput);
         if(whiteNoiseVolumeInput) updateSliderTrackFill(whiteNoiseVolumeInput);
         if(goalSelect) goalSelect.dispatchEvent(new Event('change'));
